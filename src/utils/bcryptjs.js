@@ -1,84 +1,23 @@
-const { signJWT, validateJWT } = require("../utils/jwtUtils.js");
-const { hashPassword, verifyPassword } = require("../utils/bcryptjs.js");
-const pool = require("../utils/connectDB.js");
+const bcrypt = require("bcryptjs");
 
-const registerUser = async (req, res) => {
-  const { fullname, email, password } = req.body;
-
-  if (!fullname || !email || !password) {
-    return res
-      .status(400)
-      .json({ error: "Name, email or password value missing." });
-  }
-
+const hashPassword = async (password) => {
+  const saltRounds = 10;
   try {
-    const [existingUser] = await pool.query(
-      "SELECT email FROM users WHERE email = ?",
-      [email],
-    );
-    if (existingUser.length > 0) {
-      return res.status(400).json({ error: "Email already in use" });
-    }
-
-    const hashedPassword = await hashPassword(password);
-
-    await pool.query(
-      "INSERT INTO users (fullname, email, password) VALUES (?, ?, ?)",
-      [fullname, email, hashedPassword],
-    );
-    return res.status(201).json({ message: "User registered successfully" });
+    const salt = await bcrypt.genSalt(saltRounds);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    return hashedPassword;
   } catch (error) {
-    return res.status(500).json({ error: "Internal server error" });
+    throw new Error("Error while hashing password");
   }
 };
 
-const loginUser = async (req, res) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email or password value missing" });
-  }
+const verifyPassword = async (password, hashedPassword) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM users WHERE email = ?", [
-      email,
-    ]);
-
-    if (rows.length === 0) {
-      return res.status(400).json({ error: "Invalid email or password" });
-    }
-
-    const user = rows[0];
-
-    const isPasswordValid = await verifyPassword(password, user.password);
-
-    if (!isPasswordValid) {
-      return res.status(400).json({ error: "Invalid email or password" });
-    }
-
-    const payload = {
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    };
-
-    const token = await signJWT(payload);
-    return res.status(200).json({ message: "Login successful", token });
+    const isMatch = await bcrypt.compare(password, hashedPassword);
+    return isMatch;
   } catch (error) {
-    return res.status(500).json({ error: "Internal server error" });
+    throw new Error("Error while verifying password");
   }
 };
 
-const verifyJwt = async (req, res) => {
-  const { token } = req.body;
-  if (!token) {
-    return res.status(400).json({ error: "Token missing" });
-  }
-  try {
-    const decoded = validateJWT(token);
-    return res.status(200).json({ verified: true, message: decoded });
-  } catch (error) {
-    return res.status(401).json({ verified: false, error: error.message });
-  }
-};
-
-module.exports = { registerUser, loginUser, verifyJwt };
+module.exports = { hashPassword, verifyPassword };
